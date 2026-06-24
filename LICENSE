@@ -1,0 +1,55 @@
+MIT License
+
+Copyright (c) 2024 LogSentinel AI Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+───────────────────────────────────────────────────────────────────────────────
+
+Why MIT License?
+
+The MIT License was selected for LogSentinel AI for the following reasons:
+
+1. MAXIMUM ADOPTION: The permissive nature of MIT allows security teams,
+   enterprises, and research institutions to integrate this platform into
+   their existing workflows without legal barriers or license compatibility
+   concerns.
+
+2. RESEARCH ACCESSIBILITY: Academic institutions and independent researchers
+   can freely extend, modify, and build upon this work. This accelerates
+   the pace of research in unsupervised anomaly detection.
+
+3. COMMERCIAL VIABILITY: Organizations can deploy LogSentinel AI in
+   commercial production environments, incorporate it into proprietary
+   products, and provide it as a managed service without restrictions.
+
+4. COMMUNITY GROWTH: The MIT license encourages contribution from the
+   open-source security and ML communities, enabling faster iteration,
+   bug fixes, and feature additions.
+
+5. INDUSTRY STANDARD: MIT is the most widely recognized and trusted
+   open-source license in the security tooling ecosystem, used by projects
+   like scikit-learn, FastAPI, PyTorch, and Redis.
+
+6. ATTRIBUTION PRESERVED: While permissive, MIT still requires attribution,
+   ensuring proper academic citation and recognition of contributions.
+
+The decision explicitly rejects more restrictive licenses (GPL, AGPL) that
+would prevent integration into commercial security platforms, and copyleft
+licenses that would create legal complexity for enterprise adoption.

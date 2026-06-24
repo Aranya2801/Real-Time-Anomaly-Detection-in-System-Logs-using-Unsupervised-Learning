@@ -1,0 +1,60 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+timeout = 120
+addopts = [
+    "--tb=short",
+    "--strict-markers",
+    "-q",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "ml: marks tests that require ML model loading",
+    "gpu: marks tests that require GPU",
+    "kafka: marks tests that require Kafka",
+    "db: marks tests that require database",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::UserWarning:torch",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501", "B008", "N806", "N803", "N802", "SIM108", "UP007"]
+exclude = [".venv", "alembic/versions", "notebooks", "*.ipynb"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+exclude = '''
+/(
+    \.venv
+  | alembic/versions
+  | notebooks
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["backend", "ml_models", "kafka", "datasets"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_strict_optional = true
+warn_return_any = false
+warn_unused_configs = true
+exclude = ["alembic/", "notebooks/", "tests/"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "notebooks", ".venv"]
+skips = ["B101", "B601"]
