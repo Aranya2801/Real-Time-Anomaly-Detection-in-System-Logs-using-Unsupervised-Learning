@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banners/banner.svg" alt="LogSentinel AI" width="100%"/>
+<img src="banner.svg" alt="LogSentinel AI" width="100%"/>
 
 # 🛡️ LogSentinel AI
 ### Real-Time Anomaly Detection in System Logs · Unsupervised ML · Production-Ready
