@@ -1,60 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "logsentinel"
+version = "0.2.0"
+description = "Unsupervised anomaly detection on system logs: Drain parser, classical and LSTM detectors, streaming inference"
+authors = [{ name = "Aranya Ghosh" }]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "torch>=2.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "matplotlib", "tabulate", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["logsentinel*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
-timeout = 120
-addopts = [
-    "--tb=short",
-    "--strict-markers",
-    "-q",
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "ml: marks tests that require ML model loading",
-    "gpu: marks tests that require GPU",
-    "kafka: marks tests that require Kafka",
-    "db: marks tests that require database",
-]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
-    "ignore::UserWarning:torch",
-]
+filterwarnings = ["ignore::UserWarning"]
 
 [tool.ruff]
-target-version = "py311"
-line-length = 100
-select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
-ignore = ["E501", "B008", "N806", "N803", "N802", "SIM108", "UP007"]
-exclude = [".venv", "alembic/versions", "notebooks", "*.ipynb"]
+line-length = 110
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-exclude = '''
-/(
-    \.venv
-  | alembic/versions
-  | notebooks
-)/
-'''
-
-[tool.isort]
-profile = "black"
-line_length = 100
-known_first_party = ["backend", "ml_models", "kafka", "datasets"]
-
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-no_strict_optional = true
-warn_return_any = false
-warn_unused_configs = true
-exclude = ["alembic/", "notebooks/", "tests/"]
-
-[tool.bandit]
-exclude_dirs = ["tests", "notebooks", ".venv"]
-skips = ["B101", "B601"]
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["B905", "E501"]

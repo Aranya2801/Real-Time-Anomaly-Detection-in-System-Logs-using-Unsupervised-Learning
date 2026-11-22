@@ -1,77 +1,10 @@
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
-*.egg-info/
-.eggs/
-*.egg
-
-# Virtual environments
+*.pyc
 .venv/
-venv/
-env/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-.DS_Store
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Secrets
-*.pem
-*.key
-*.cert
-*.p12
-
-# ML Models (large binaries)
-ml_models/saved/*.pt
-ml_models/saved/*.pkl
-ml_models/saved/*.joblib
-!ml_models/saved/.gitkeep
-
-# Reports
-reports/generated/
-!reports/generated/.gitkeep
-
-# Datasets (large files)
-datasets/samples/
-!datasets/samples/.gitkeep
-
-# Logs
-*.log
-logs/
-
-# Coverage
-.coverage
-htmlcov/
-coverage.xml
 .pytest_cache/
+*.egg-info/
+.ipynb_checkpoints/
 
-# MkDocs
-site/
-
-# Docker
-.docker/
-
-# Alembic versions (auto-generated)
-alembic/versions/*.py
-!alembic/versions/.gitkeep
-
-# Notebooks output
-notebooks/*.ipynb
-!notebooks/README.md
-
-# Node (if any frontend tooling)
-node_modules/
-.npm/
+# datasets are downloaded by scripts/download_data.sh
+data/
+models/
