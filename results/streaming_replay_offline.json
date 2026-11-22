@@ -1,0 +1,17 @@
+{
+  "warmup": "offline",
+  "warmup_sessions": 3852,
+  "test_blocks": 3970,
+  "test_anomalies": 195,
+  "lines_streamed": 56362,
+  "lines_per_second": 3479,
+  "precision": 0.967,
+  "recall": 0.605,
+  "caught_before_session_end": 0.246,
+  "median_fraction_of_session_seen": 1.0,
+  "alert_reasons": {
+    "unseen template": 57,
+    "ended early": 41,
+    "unexpected event": 20
+  }
+}

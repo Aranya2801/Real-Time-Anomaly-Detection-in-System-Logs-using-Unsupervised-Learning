@@ -1,0 +1,16 @@
+{
+  "warmup": "prefix",
+  "warmup_sessions": 3852,
+  "test_blocks": 3970,
+  "test_anomalies": 195,
+  "lines_streamed": 56362,
+  "lines_per_second": 3669,
+  "precision": 0.963,
+  "recall": 0.395,
+  "caught_before_session_end": 0.325,
+  "median_fraction_of_session_seen": 1.0,
+  "alert_reasons": {
+    "unseen template": 61,
+    "unexpected event": 16
+  }
+}
