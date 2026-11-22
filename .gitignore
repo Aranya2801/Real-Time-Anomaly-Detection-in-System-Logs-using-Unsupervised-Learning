@@ -6,5 +6,5 @@ __pycache__/
 .ipynb_checkpoints/
 
 # datasets are downloaded by scripts/download_data.sh
-data/
-models/
+/data/
+/models/
