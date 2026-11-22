@@ -1,0 +1,11 @@
+{
+  "sessions": 7940,
+  "anomalies": 313,
+  "templates": 25,
+  "train_sessions": 3970,
+  "train_anomalies": 118,
+  "test_sessions": 3970,
+  "test_anomalies": 195,
+  "test_anomalies_indistinguishable": 80,
+  "natural_contamination": 0.0297
+}
