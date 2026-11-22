@@ -1,470 +1,223 @@
-<div align="center">
+# Real-Time Anomaly Detection in System Logs using Unsupervised Learning
 
-<img src="banner.svg" alt="LogSentinel AI" width="100%"/>
+[![tests](https://github.com/Aranya2801/Real-Time-Anomaly-Detection-in-System-Logs-using-Unsupervised-Learning/actions/workflows/ci.yml/badge.svg)](https://github.com/Aranya2801/Real-Time-Anomaly-Detection-in-System-Logs-using-Unsupervised-Learning/actions)
 
-# 🛡️ LogSentinel AI
-### Real-Time Anomaly Detection in System Logs · Unsupervised ML · Production-Ready
+This project parses raw system logs into event templates, groups them into sessions, and flags
+anomalous sessions without using labels for training. It also has a streaming mode that checks every
+log line as it arrives, so you can find out about a problem before the session is finished.
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.1+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Kafka](https://img.shields.io/badge/Apache_Kafka-3.6+-231F20?style=for-the-badge&logo=apache-kafka&logoColor=white)](https://kafka.apache.org)
-[![Docker](https://img.shields.io/badge/Docker-24+-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+Most log anomaly detection papers call their methods "unsupervised" but train them only on sessions
+already known to be normal, and that takes labels. I wanted to know what happens when you don't have
+that luxury and the training data contains some anomalies, which is what you get if you train on last
+week's logs in a real system. That became the main experiment here.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/your-org/LogSentinel-AI/ci.yml?style=for-the-badge&logo=github-actions&label=CI)](https://github.com/your-org/LogSentinel-AI/actions)
-[![Coverage](https://img.shields.io/codecov/c/github/your-org/LogSentinel-AI?style=for-the-badge&logo=codecov)](https://codecov.io)
-[![Security](https://img.shields.io/badge/Security-Bandit_Passed-green?style=for-the-badge)](https://bandit.readthedocs.io)
-[![Stars](https://img.shields.io/github/stars/your-org/LogSentinel-AI?style=for-the-badge&logo=github)](https://github.com/your-org/LogSentinel-AI/stargazers)
+## What's in here
 
-**[📖 Docs](docs/)** · **[🚀 Quick Start](#-quick-start)** · **[🧠 ML Models](#-ml-models)** · **[📊 Benchmarks](#-benchmarks)** · **[🤝 Contributing](CONTRIBUTING.md)**
+- **Drain log parser** (`logsentinel/parsing/drain.py`): I wrote my own version from the original paper
+  rather than using `drain3`, mainly so I understood it and could run it one line at a time. I checked it
+  against the ground-truth templates for all 16 LogHub systems.
+- **Seven detectors behind one interface** (`fit / score / predict`):
+  - PCA with the Q-statistic threshold (Xu et al., SOSP'09)
+  - Isolation Forest, One-Class SVM, LOF
+  - an MLP autoencoder on event counts
+  - DeepLog (Du et al., CCS'17), an LSTM next-event model, with one change I made (below)
+  - a `RareEvent` rule I added as a sanity baseline
+- **Label-free thresholds** for every model, so the F1 numbers reflect what you'd actually deploy. Best-F1
+  over all thresholds is reported separately and clearly marked.
+- **A streaming detector** (`logsentinel/stream.py`) that keeps per-session state and alerts on
+  unseen templates, unexpected next events, or sessions that end too early.
+- Experiment scripts that regenerate every number and figure in this README.
 
-</div>
+## Data
 
----
+I used the HDFS dataset from [LogHub](https://github.com/logpai/loghub): Hadoop file-system logs where
+each block id is a session and each block is labeled normal or anomalous. The results below come from
+the 100k-line HDFS sample published by LogPAI, which has 7,940 blocks, 313 of them anomalous.
+`scripts/download_data.sh --full` fetches the full 11M-line HDFS_v1 if you have the disk space and time.
 
-## 🔭 Overview
+Splits are **chronological**: the first 50% of blocks (by first appearance) for training, the rest for
+testing. Random splits on HDFS put near-identical sessions on both sides and inflate scores.
 
-**LogSentinel AI** is a research-grade, production-ready platform applying seven state-of-the-art **unsupervised ML algorithms** to detect anomalies in system logs in real time — no labeled data required.
+One thing I found while digging into the data: **80 of the 195 anomalous test blocks have exactly the
+same event sequence as some normal block.** The 100k sample covers only about 26 minutes of logging, so
+for those blocks whatever made them anomalous happened outside the window. No session-level method can
+catch them, so I also report recall on the remaining "distinguishable" anomalies.
 
-Built to the standards expected at **Google Research**, **DeepMind**, **Elastic**, **Splunk**, **CrowdStrike**, and **Palo Alto Networks**.
+## Results
 
-| Capability | Traditional SIEM | LogSentinel AI |
-|---|---|---|
-| Detection | Rule-based signatures | Unsupervised ML ensemble |
-| Zero-Day Threats | ❌ | ✅ |
-| Labeled Data Required | ✅ | ❌ |
-| Online/Adaptive Learning | ❌ | ✅ |
-| Root Cause Analysis | Manual | ✅ Automated AI |
-| Explainability | ❌ | ✅ SHAP + LLM |
-| Concept Drift Detection | ❌ | ✅ ADWIN + Page-Hinkley |
-| Offline LLM Investigation | ❌ | ✅ Llama 3 / Mistral |
-| MITRE ATT&CK Mapping | Limited | ✅ 113 techniques |
+All numbers come from `results/` and can be regenerated with the commands further down. Stochastic models
+were run with 3 seeds, shown as mean ± std where the std isn't zero.
 
----
+### 1. Clean vs. unlabeled training data
 
-## 🏗️ Architecture
-
-```
- Log Sources          Kafka Streaming        ML Ensemble Engine
- ─────────────        ───────────────        ──────────────────────────────
- Syslog ──────┐       ┌─────────────┐        ┌─ Isolation Forest  (w=0.15)
- Auth Log ────┼──────▶│  raw-logs   │──────▶ ├─ One-Class SVM     (w=0.10)
- Nginx ───────┤       │  anomalies  │        ├─ LOF               (w=0.05)
- Apache ──────┤       │  alerts     │        ├─ LSTM Autoencoder  (w=0.25)
- Cloud ───────┘       └─────────────┘        ├─ Transformer AE    (w=0.30)
-                              │              ├─ Deep SVDD         (w=0.05)
-                              ▼              └─ River Online      (w=0.10)
-                      ┌─────────────┐                │
-                      │ Log Parser  │       Adaptive Ensemble Fusion (AEF)
-                      │  + Feature  │                │
-                      │  Engineer   │                ▼
-                      └─────────────┘        ┌──────────────┐
-                                             │  SHAP + XAI  │
- Storage                                     │  RCA Engine  │
- ─────────                                   │  LLM Assist  │
- PostgreSQL ◀──────────────────────────────▶ └──────────────┘
- Redis Cache                                         │
- Elasticsearch                              Alerts + Dashboards
- Kafka Topics                               ─────────────────
-                                            Grafana · Kibana
-                                            Plotly Dash · WS
-                                            Email/Slack/Discord
-```
-
----
-
-## ✨ Features
-
-### 🔴 Real-Time Log Streaming
-- **50,000 logs/second** throughput via Apache Kafka (3-partition, gzip)
-- Tail Linux syslog, auth, nginx, apache, kernel logs
-- Windows Event Log streaming (pywin32)
-- Cloud log ingestion (AWS CloudWatch, GCP, Azure)
-- Sub-100ms end-to-end latency
-
-### 🧠 AI-Powered Ensemble (7 Algorithms)
-| Algorithm | Type | Strength | Weight |
+| model | F1, clean training | F1, unlabeled training (~3% anomalies) | PR-AUC clean → unlabeled |
 |---|---|---|---|
-| Isolation Forest | Statistical | Fast, scalable | 0.15 |
-| One-Class SVM | Kernel | Non-linear boundaries | 0.10 |
-| LOF | Density | Local density anomalies | 0.05 |
-| **LSTM Autoencoder** | Deep Learning | Temporal sequences | 0.25 |
-| **Transformer AE** | Deep Learning | Attention-based | 0.30 |
-| **Deep SVDD** | Deep Learning | Hypersphere mapping | 0.05 |
-| River Online | Streaming | Adaptive, drift-aware | 0.10 |
+| RareEvent rule | 0.562 | 0.562 | 0.417 → 0.408 |
+| PCA | 0.562 | 0.562 | 0.413 → 0.602 |
+| Isolation Forest | 0.000 | 0.620 | 0.055 → 0.519 |
+| One-Class SVM | **0.747** | **0.747** | 0.609 → 0.599 |
+| LOF | **0.747** | 0.264 | 0.603 → 0.184 |
+| Autoencoder | **0.747** | **0.747** | 0.624 → 0.599 |
+| DeepLog (+END token) | 0.741 ± 0.007 | 0.256 ± 0.001 | 0.634 → 0.524 |
 
-### 💡 Explainable AI (XAI)
-- **SHAP values** for every anomaly detection
-- Attention weight visualization (Transformer)
-- Counterfactual explanations ("what would make this normal?")
-- Natural language summaries via LLM
+F1 is measured at the label-free threshold. Every model that reaches 0.747 F1 finds **all** of the
+distinguishable anomalies (recall 1.0 on that subset) with 0.975 precision. Full table with
+precision, recall and ROC-AUC: [`results/RESULTS.md`](results/RESULTS.md).
 
-### 🔍 Root Cause Analysis
-- Cross-service log correlation
-- Cascade failure detection with dependency graphs
-- MITRE ATT&CK tactic/technique mapping (113 techniques)
-- Anomaly timeline reconstruction
-- Impact blast-radius estimation
+![contamination](results/contamination.png)
 
-### 📄 Incident Reports
-- **PDF** reports with embedded charts (ReportLab)
-- **Markdown** reports (Jinja2 templates)
-- **JSON** structured export
-- Executive summaries + technical details
+What I take from this:
 
-### 🔐 Security Threat Detection
-- Brute force attack patterns
-- Privilege escalation indicators
-- Port scan / network reconnaissance
-- Ransomware behavioral signatures
-- Data exfiltration patterns
-- Full **MITRE ATT&CK** kill-chain mapping
+- **DeepLog is the most fragile.** At just 0.5% contamination its F1 drops from 0.74 to about 0.35, and
+  by 1% it's at 0.26. HDFS has only ~20 event types, so once a few anomalous sessions are in the training
+  data their events quickly end up in the model's top-9 predictions and stop counting as surprising.
+- **LOF survives 1% contamination but falls apart at 2%**, once anomalies are dense enough to form
+  their own neighbourhoods.
+- **Isolation Forest does the opposite of what you'd expect:** it is useless on clean data. 60.5% of
+  test anomalies differ from normal sessions in event types whose count never varies in the clean
+  training set, and Isolation Forest can't split on a feature that doesn't vary. A little contamination
+  gives those features some variance, so it starts working.
+- **One-Class SVM is the robust one** here: 0.747 F1 at every contamination level and every seed. The
+  autoencoder is close behind; one of its three seeds dropped to 0.56 at 2% contamination, otherwise it
+  stays at 0.747.
+- **PCA gets better with contamination** for a similar reason as Isolation Forest: the TF-IDF weighting
+  in the original method zeroes out events that appear in every training session.
 
-### 🤖 Offline LLM Investigation
-- Powered by **Ollama + Llama 3 / Mistral**
-- Works **completely offline** — no data leaves your system
-- Structured JSON output for downstream processing
-- Response caching for repeated queries
+### 2. Breaking down what "detectable" means on HDFS
 
-### 📊 Real-Time Dashboards
-- **Grafana** — operational metrics (`:3000`)
-- **Kibana** — log search and exploration (`:5601`)
-- **Plotly Dash** — ML insights and SHAP charts (`:8050`)
-- **WebSocket** streams for live anomaly push
+The RareEvent rule (flag a session if it contains a template seen in under 5% of training sessions)
+reaches 0.395 recall with 0.975 precision without learning anything. Combined with the analysis above,
+the test anomalies split roughly into:
 
-### 🔔 Multi-Channel Alerting
-- Email (SMTP), Slack, Discord, Telegram
-- 4 severity levels: INFO / WARNING / CRITICAL / EMERGENCY
-- Alert deduplication (configurable window)
-- Rate limiting to prevent alert fatigue
-
-### 🔬 Research-Level Innovations
-- **Adaptive Ensemble Fusion (AEF)** — novel dynamic weight adjustment
-- **Hierarchical Log Embedding (HLE)** — multi-scale tokenization
-- **Causal Anomaly Attribution (CAA)** — temporal SHAP extension
-- **CDA-SVDD** — concept drift-aware Deep SVDD
-- **Graph Neural Networks** for log relationship modeling
-- **ADWIN + Page-Hinkley** concept drift detection
-
----
-
-## ⚡ Quick Start
-
-```bash
-# 1. Clone
-git clone https://github.com/your-org/LogSentinel-AI.git
-cd LogSentinel-AI
-
-# 2. Configure
-cp .env.example .env
-# Edit .env to set your passwords and alert webhooks
-
-# 3. Launch (all 16 services)
-docker-compose up -d
-
-# 4. Initialize (Kafka topics, ES indices, admin user)
-./scripts/setup/initialize.sh
-
-# 5. Open dashboards
-open http://localhost:3000   # Grafana  (admin/logsentinel)
-open http://localhost:5601   # Kibana
-open http://localhost:8000/docs  # API Swagger UI
-open http://localhost:8050   # Plotly ML Dashboard
-
-# 6. Stream demo logs
-docker-compose --profile demo up log-producer
-```
-
----
-
-## 📦 Installation
-
-### Prerequisites
-
-| Tool | Version | Check |
+| type | share of test anomalies | who catches it |
 |---|---|---|
-| Python | 3.11+ | `python --version` |
-| Docker | 24+ | `docker --version` |
-| Docker Compose | 2.21+ | `docker compose version` |
-| RAM | 16GB recommended | — |
-| Storage | 20GB free | — |
+| contains an event normal sessions never produce | ~40% | everything, including the rule |
+| missing events, i.e. the block stops early | ~21% | OCSVM, LOF, AE, DeepLog with END token |
+| identical to a normal session within this window | ~41% | nobody, by construction |
 
-### Development Setup
+So on this dataset, no detector does better than the rule plus a check for "is the session complete?".
+I think that's worth stating plainly, because many papers report F1 above 0.95 on HDFS and it's hard
+to tell how much of that is the method and how much is the setup.
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-pre-commit install
+### 3. DeepLog with an end-of-session token
 
-# Start infrastructure only
-docker-compose up -d postgres redis kafka elasticsearch
+Vanilla DeepLog only checks events that actually arrive, so a block that gets allocated and then goes
+silent is never flagged. I added an `END` key that the model must predict when a session closes.
 
-# Run migrations
-alembic upgrade head
-
-# Start API with hot-reload
-uvicorn backend.main:app --reload --port 8000
-```
-
-### Install Ollama (for LLM features)
-
-```bash
-# Linux/macOS
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull llama3          # 4.7GB — best quality
-# or
-ollama pull mistral         # 4.1GB — faster
-```
-
----
-
-## ⚙️ Configuration
-
-Key settings in `.env` (full list in `.env.example`):
-
-```bash
-# ML Thresholds
-ANOMALY_THRESHOLD_WARNING=0.60
-ANOMALY_THRESHOLD_CRITICAL=0.80
-ANOMALY_THRESHOLD_EMERGENCY=0.95
-
-# Ensemble weights (must sum to 1.0)
-WEIGHT_TRANSFORMER_AE=0.30
-WEIGHT_LSTM_AE=0.25
-WEIGHT_ISOLATION_FOREST=0.15
-
-# LLM
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=llama3
-
-# Alerting
-SLACK_WEBHOOK_URL=https://hooks.slack.com/...
-TELEGRAM_BOT_TOKEN=...
-```
-
----
-
-## 📡 API Reference
-
-Full Swagger UI: `http://localhost:8000/docs`
-
-```bash
-# Health check
-GET  /api/v1/health
-
-# Ingest logs
-POST /api/v1/logs/
-
-# List anomalies with filters
-GET  /api/v1/anomalies/?risk_level=critical&page=1&page_size=50
-
-# Get SHAP explanation
-GET  /api/v1/anomalies/{id}/explain
-
-# Get Root Cause Analysis
-GET  /api/v1/anomalies/{id}/rca
-
-# LLM investigation
-POST /api/v1/investigate
-
-# Generate PDF report
-POST /api/v1/reports/
-
-# WebSocket — live anomaly stream
-WS   /ws/anomalies?min_score=0.6
-```
-
-### WebSocket Example
-
-```javascript
-const ws = new WebSocket("ws://localhost:8000/ws/anomalies?min_score=0.6");
-ws.onmessage = (e) => {
-  const anomaly = JSON.parse(e.data);
-  // { anomaly_id, timestamp, anomaly_score, risk_level,
-  //   source_type, host, probable_reason, algorithm_scores }
-};
-```
-
----
-
-## 🤖 ML Models
-
-### LSTM Variational Autoencoder
-```
-Input:   [batch, seq_len=50, features=128]
-Encoder: BiLSTM(256, layers=3) → Temporal Attention → μ,σ (latent=64)
-Decoder: LSTM(256, layers=3) → Linear(128)
-Loss:    MSE + β·KL(N(μ,σ) || N(0,1))
-Params:  ~3.2M
-```
-
-### Transformer Autoencoder
-```
-Input:   [batch, seq_len=50, d_model=256]
-Encoder: Hybrid PE → 6×TransformerLayer(nhead=8, ff=1024, pre-LN)
-Decoder: 6×TransformerDecoderLayer + CrossAttention
-Score:   0.6·ReconError + 0.4·AssocDiscrepancy
-Params:  ~12.1M
-```
-
-### Deep SVDD (CDA-SVDD extension)
-```
-Network: Linear(128→512→256→128→64, no final bias)
-Center:  c fixed post-init; EMA-updated for drift (α=0.001)
-Loss:    min ||φ(x) - c||²  (soft-boundary with ν=0.05)
-Novel:   Sliding hypersphere handles non-stationary logs
-```
-
----
-
-## 📊 Benchmarks
-
-### Detection Performance
-
-| Model | HDFS F1 | BGL F1 | Thunderbird F1 | P99 Latency |
+| | precision | recall | F1 | PR-AUC |
 |---|---|---|---|---|
-| Isolation Forest | 0.891 | 0.847 | 0.823 | 2.1ms |
-| One-Class SVM | 0.867 | 0.831 | 0.809 | 4.3ms |
-| LOF | 0.843 | 0.812 | 0.798 | 8.7ms |
-| LSTM Autoencoder | 0.943 | 0.921 | 0.907 | 12.4ms |
-| Transformer AE | 0.957 | 0.934 | 0.918 | 18.2ms |
-| Deep SVDD | 0.938 | 0.915 | 0.901 | 10.1ms |
-| **Ensemble (AEF)** | **0.971** | **0.952** | **0.941** | **24.6ms** |
+| vanilla DeepLog, clean | 0.937 | 0.395 | 0.555 | 0.432 |
+| **with END token, clean** | 0.955 | **0.605** | **0.741** | **0.634** |
+| vanilla DeepLog, unlabeled | 0.824 | 0.154 | 0.259 | 0.331 |
+| with END token, unlabeled | 0.763 | 0.154 | 0.256 | 0.524 |
 
-### System Throughput
+It's a one-line change in how the training windows are built and it moves clean F1 from 0.555 to 0.741.
+It doesn't fix the contamination problem, though.
 
-```
-Log ingestion:          50,000 logs/second
-Detection P50:          18ms
-Detection P99:          47ms
-Alert delivery:         <100ms from detection
-PDF report generation:  2-8 seconds
-Dashboard refresh:      1 second (WebSocket push)
-```
+<img src="results/deeplog_topg.png" width="480">
 
----
+### 4. Streaming replay
 
-## 📚 Datasets
+`experiments/streaming_replay.py` takes the model trained on the first half and pushes the second half
+of the log through `StreamingDetector` one line at a time:
 
-| Dataset | Size | Lines | Labels | Download |
-|---|---|---|---|---|
-| HDFS | 1.5GB | 11M | ✅ | [Zenodo](https://zenodo.org/record/1144100) |
-| BGL | 708MB | 4.7M | ✅ | [Zenodo](https://zenodo.org/record/1144100) |
-| Thunderbird | 29GB | 211M | ✅ | [Zenodo](https://zenodo.org/record/1144100) |
-| OpenStack | 58MB | 207K | ❌ | [LogHub](https://github.com/logpai/loghub) |
-| Linux | 2MB | 25K | ❌ | [LogHub](https://github.com/logpai/loghub) |
-
-```bash
-# Download all small datasets
-python datasets/loaders/download_datasets.py --dataset openstack linux windows
-
-# Generate synthetic dataset (fast, no download)
-python datasets/generators/synthetic_log_generator.py \
-  --mode batch --count 10000 --anomaly-rate 0.05
-```
-
----
-
-## 🚀 Deployment
-
-### Docker Compose (default)
-```bash
-docker-compose up -d
-```
-
-### Kubernetes
-```bash
-kubectl apply -f deployment/kubernetes/base/
-```
-
-### Cloud
-
-| Cloud | Guide |
+| | value |
 |---|---|
-| AWS EKS | [docs/deployment/aws.md](docs/deployment/aws.md) |
-| GCP GKE | [docs/deployment/gcp.md](docs/deployment/gcp.md) |
-| Azure AKS | [docs/deployment/azure.md](docs/deployment/azure.md) |
+| throughput (single process, CPU, includes parsing) | ~3,500 lines/s |
+| precision / recall | 0.967 / 0.605 (same as batch) |
+| anomalies flagged before the block's last event | 24.6% |
+| alert reasons | 57 unseen template, 41 ended early, 20 unexpected event |
 
----
+The throughput is limited by running the LSTM once per event; batching events across sessions would be
+the obvious next step. I also tried warming the model up only on lines from the stream before the cut
+(`--warmup prefix`). That loses all the "ended early" detections (recall 0.395), because HDFS blocks stay
+open for a long time (median about 5,500 lines) and most warm-up sessions look unfinished, so the model
+learns that sessions can stop anywhere.
 
-## 🗺️ Roadmap
+Some real alerts from the replay are in [`results/streaming_alerts_offline.txt`](results/streaming_alerts_offline.txt).
 
-- [x] Core ML ensemble (7 algorithms)
-- [x] Apache Kafka streaming pipeline
-- [x] SHAP explainability
-- [x] Root Cause Analysis engine
-- [x] PDF / Markdown / JSON incident reports
-- [x] MITRE ATT&CK mapping
-- [x] Offline LLM investigation (Ollama)
-- [x] Grafana + Kibana + Plotly dashboards
-- [x] Multi-channel alerting (Email/Slack/Discord/Telegram)
-- [x] Docker + Kubernetes deployment
-- [x] GitHub Actions CI/CD
-- [ ] Graph Neural Network log modeling (Q1 2025)
-- [ ] Federated learning across nodes (Q2 2025)
-- [ ] eBPF kernel-level monitoring (Q2 2025)
-- [ ] Kubernetes operator with auto-scaling (Q3 2025)
-- [ ] ARM64 / Apple Silicon optimization (Q3 2025)
-- [ ] WASM-based edge detection (Q4 2025)
+### 5. Parser accuracy
 
----
+Grouping accuracy of my Drain implementation on the LogHub 2k samples (same masks and hyperparameters as
+the LogPAI benchmark):
 
-## 🧬 Research Contributions
+| HDFS | Hadoop | Spark | Zookeeper | BGL | HPC | Thunderbird | Windows |
+|---|---|---|---|---|---|---|---|
+| 0.998 | 0.949 | 0.922 | 0.967 | 0.964 | 0.900 | 0.950 | 0.997 |
 
-This project makes the following novel contributions:
+| Linux | Android | HealthApp | Apache | Proxifier | OpenSSH | OpenStack | Mac |
+|---|---|---|---|---|---|---|---|
+| 0.235 | 0.894 | 0.863 | 1.000 | 0.526 | 0.731 | 0.722 | 0.791 |
 
-1. **Adaptive Ensemble Fusion (AEF)** — Online Bayesian weight updates based on performance feedback, drift signals, and prediction uncertainty. Outperforms static ensembles by 2-4% F1 on all benchmarks.
+These mostly line up with the numbers reported for Drain in Zhu et al. (ICSE-SEIP 2019). Linux is the
+exception, and that's down to the ground truth: the current LogHub labels treat `user=root`,
+`user=guest` and `user=test` as three different templates, and a similarity-based parser will (correctly,
+I'd argue) merge them.
 
-2. **Causal Anomaly Attribution (CAA)** — Extension of SHAP to temporal sequences using causal intervention graphs. Attributes anomalies not just to features but to causal pathways through time.
-
-3. **CDA-SVDD** — Concept Drift-Aware Deep SVDD with sliding EMA hypersphere center. Handles non-stationary log distributions without full model retraining.
-
-4. **Hierarchical Log Embedding (HLE)** — Multi-scale tokenization capturing character-level, token-level, and session-level patterns simultaneously in a unified 128-dim representation.
-
----
-
-## 🤝 Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
+## Running it
 
 ```bash
-# Run all tests
-pytest tests/ -v --cov=backend --cov=ml_models
+git clone https://github.com/Aranya2801/Real-Time-Anomaly-Detection-in-System-Logs-using-Unsupervised-Learning.git
+cd Real-Time-Anomaly-Detection-in-System-Logs-using-Unsupervised-Learning
+pip install -r requirements.txt
+./scripts/download_data.sh
 
-# Lint
-ruff check . && black --check .
-
-# Security
-bandit -r backend/ ml_models/
+export PYTHONPATH=.
+python experiments/parser_benchmark.py            # ~5 s
+python experiments/hdfs_benchmark.py --seeds 3    # ~15 min on a laptop CPU
+python experiments/streaming_replay.py            # ~2 min
+python experiments/make_report.py                 # tables + figures into results/
+pytest -q
 ```
 
----
+Train a model and stream a log file through it:
 
-## 📖 Citation
-
-```bibtex
-@software{logsentinel_ai_2024,
-  title  = {LogSentinel AI: Real-Time Anomaly Detection in System Logs},
-  author = {LogSentinel AI Contributors},
-  year   = {2024},
-  url    = {https://github.com/your-org/LogSentinel-AI},
-  license = {MIT}
-}
+```bash
+python -m logsentinel.train data/HDFS/HDFS_100k.log_structured.csv \
+    --labels data/HDFS/anomaly_label.csv --out models/hdfs_deeplog.pkl
+tail -F /var/log/hadoop/hdfs.log | python -m logsentinel.stream models/hdfs_deeplog.pkl
 ```
 
----
+Leave out `--labels` to train fully unsupervised (and see section 1 for what that costs you).
 
-## 📄 License
+## Layout
 
-MIT License — see [LICENSE](LICENSE). Chosen for maximum adoption across commercial, research, and open-source contexts.
+```
+logsentinel/
+  parsing/drain.py       Drain parser (online, one line at a time)
+  parsing/settings.py    per-dataset masks / hyperparameters
+  data.py                HDFS loading, block-id sessions, chronological split
+  features.py            event count matrix (+ TF-IDF for PCA)
+  models/classical.py    PCA, IsolationForest, OCSVM, LOF, RareEvent rule
+  models/deep.py         DeepLog (+END token), autoencoder
+  stream.py              streaming detector + CLI
+  train.py               train & save a parser+DeepLog bundle
+  metrics.py             grouping accuracy, PR-AUC, best-F1
+experiments/             scripts that produce everything in results/
+tests/                   unit tests (parser, every detector, streaming)
+```
 
----
+## Limitations / what I'd do next
 
-<div align="center">
+- Everything is on the HDFS *sample*. The code handles the full HDFS_v1 file, but I haven't run the
+  full sweep on it yet. BGL and Thunderbird need sliding windows instead of block ids, which I haven't
+  added.
+- The contamination results probably depend on how small the HDFS vocabulary is. I'd like to see
+  whether DeepLog is as fragile on BGL, which has hundreds of templates.
+- A robust variant of DeepLog (e.g. dropping training windows the model itself finds too surprising,
+  and retraining) seems like the natural fix for the contamination problem. I haven't tried it yet.
+- The streaming detector processes one event at a time per session; batching across sessions should
+  give a large speedup.
 
-**Built with ❤️ for the security and ML research community**
+## References
 
-*If LogSentinel AI helped you, please ⭐ star it and share with your team*
+- P. He, J. Zhu, Z. Zheng, M. R. Lyu. *Drain: An Online Log Parsing Approach with Fixed Depth Tree.* ICWS 2017.
+- W. Xu, L. Huang, A. Fox, D. Patterson, M. I. Jordan. *Detecting Large-Scale System Problems by Mining Console Logs.* SOSP 2009.
+- M. Du, F. Li, G. Zheng, V. Srikumar. *DeepLog: Anomaly Detection and Diagnosis from System Logs through Deep Learning.* CCS 2017.
+- J. Zhu et al. *Tools and Benchmarks for Automated Log Parsing.* ICSE-SEIP 2019.
+- J. Zhu, S. He, P. He, J. Liu, M. R. Lyu. *Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics.* ISSRE 2023.
+- S. He, J. Zhu, P. He, M. R. Lyu. *Experience Report: System Log Analysis for Anomaly Detection.* ISSRE 2016.
 
-</div>
+## License
+
+MIT
