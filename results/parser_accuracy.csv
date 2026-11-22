@@ -1,0 +1,17 @@
+dataset,true_templates,found_templates,grouping_accuracy,lines_per_sec
+HDFS,14,17,0.998,204807
+Hadoop,114,103,0.949,253719
+Spark,36,30,0.922,172116
+Zookeeper,50,49,0.967,265852
+BGL,120,109,0.964,355666
+HPC,46,48,0.9,411372
+Thunderbird,149,197,0.95,225601
+Windows,50,53,0.997,283310
+Linux,118,116,0.235,200906
+Android,166,182,0.894,102572
+HealthApp,75,314,0.863,173951
+Apache,6,6,1.0,323887
+Proxifier,8,18,0.526,121876
+OpenSSH,27,71,0.731,144111
+OpenStack,43,383,0.722,118699
+Mac,341,398,0.791,91402
